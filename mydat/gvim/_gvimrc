@@ -1,0 +1,521 @@
+silent! call plug#begin()
+Plug '~\vimfiles\plugged\nerdtree-master'
+Plug '~\vimfiles\plugged\lexima.vim-master'
+Plug '~\vimfiles\plugged\lightline.vim-master'
+Plug '~\vimfiles\plugged\yankround.vim-master'
+Plug '~\vimfiles\plugged\vimdoc-ja-master'
+Plug '~\vimfiles\plugged\translate.vim-master'
+Plug '~\vimfiles\plugged\nvim-yarp-master\'
+Plug '~\vimfiles\plugged\vim-hug-neovim-rpc-master\'
+Plug '~\vimfiles\plugged\deoplete.nvim-master\'
+Plug '~\vimfiles\plugged\deoplete.nvim-master\'
+Plug '~\vimfiles\plugged\vim-nerdtree-tabs-master\'
+Plug '~\vimfiles\plugged\vim-easymotion-master\'
+Plug '~\vimfiles\plugged\VimCompletesMe-master\'
+Plug '~\vimfiles\plugged\prev-md.vim-main\'
+
+call plug#end()
+
+source ~\vimfiles\plugged\nerdtree-master\plugin\nerd_tree.vim
+source ~\vimfiles\plugged\lexima.vim-master\plugin\lexima.vim
+source ~\vimfiles\plugged\lightline.vim-master\plugin\lightline.vim
+source ~\vimfiles\plugged\yankround.vim-master\plugin\yankround.vim
+source ~\vimfiles\plugged\translate.vim-master\plugin\translate.vim
+source ~\vimfiles\plugged\nvim-yarp-master\autoload\yarp.vim
+source ~\vimfiles\plugged\vim-hug-neovim-rpc-master\autoload\neovim_rpc.vim
+source ~\vimfiles\plugged\deoplete.nvim-master\plugin\deoplete.vim
+source ~\vimfiles\plugged\vim-nerdtree-tabs-master\nerdtree_plugin\vim-nerdtree-tabs.vim
+source ~\vimfiles\plugged\vim-easymotion-master\plugin\EasyMotion.vim
+source ~\vimfiles\plugged\VimCompletesMe-master\plugin\VimCompletesMe.vim
+source ~\vimfiles\plugged\prev-md.vim-main\plugin\prev_md.vim
+
+let g:nerdtree_tabs_open_on_gui_startup = 0
+let g:nerdtree_tabs_autofind = 1
+
+"ファイルを上書きする前にバックアップを作ることを無効化
+set nowritebackup
+" ファイルを上書きする前にバックアップを作ることを無効化
+set nobackup
+" vim の矩形選択で文字が無くても右へ進める
+set virtualedit=block
+" 挿入モードでバックスペースで削除できるようにする
+set backspace=indent,eol,start
+" 全角文字専用の設定
+set ambiwidth=double
+" wildmenuオプションを有効(vimバーからファイルを選択できる)
+set wildmenu
+
+set tw=0
+
+
+"----------------------------------------------------------
+" 検索
+"----------------------------------------------------------
+" 検索するときに大文字小文字を区別しない
+set ignorecase
+" 小文字で検索すると大文字と小文字を無視して検索
+set smartcase
+" 検索がファイル末尾まで進んだら、ファイル先頭から再び検索
+set wrapscan
+" インクリメンタル検索 (検索ワードの最初の文字を入力した時点で検索が開始)
+set incsearch
+" 検索結果をハイライト表示
+set hlsearch
+
+"----------------------------------------------------------
+"環境変数
+"----------------------------------------------------------
+"----------------------------------------------------------
+"シンタクス
+"----------------------------------------------------------
+" .txtファイル用のシンタックス設定
+autocmd BufRead,BufNewFile *.txt set filetype=txt
+autocmd filetype txt source ~/vimfiles/syntax/txt.vim
+
+"----------------------------------------------------------
+" 短縮入力
+"----------------------------------------------------------
+cnoreabbrev <expr> s ShortcutCmd('s', 's///g')
+cnoreabbrev <expr> v ShortcutCmd('v', 'v//d')
+cnoreabbrev <expr> g ShortcutCmd('g', 'g//d')
+
+function! ShortcutCmd(replace_from, replace_to)
+    " コマンドがビジュアル範囲置換か普通の:sコマンドかチェック
+    let cmd = getcmdtype() .. getcmdline()
+    if match(cmd, "^:" . a:replace_from) >= 0
+        " getchar()を実行して置換後の文字列を準備し、feedkeysでカーソルを移動
+        call feedkeys("\<backspace>%" . a:replace_to, 'n')
+        call feedkeys("\<left>\<left>", 'n')
+        return ''
+    elseif match(cmd, "^:'<,'>" . a:replace_from) >= 0
+        " getchar()を実行して置換後の文字列を準備し、feedkeysでカーソルを移動
+        call feedkeys("\<backspace>" . a:replace_to, 'n')
+        call feedkeys("\<left>\<left>", 'n')
+        return ''
+    endif
+    " 条件が一致しない場合は置換前文字列を返す
+    return a:replace_from
+endfunction
+
+"----------------------------------------------------------
+" マッピング
+"----------------------------------------------------------
+
+"タブ移動
+nnoremap <c-w> :winc w<cr>
+nnoremap <c-s-w> :winc h<cr>
+
+nmap <c-tab> gt
+nmap <c-s-tab> gT
+imap <c-tab> <esc>gt
+imap <c-s-tab> <esc>gT
+
+"yankroud専用
+"nmap p <plug>(yankround-p)
+"xmap p <plug>(yankround-p)
+"nmap p <plug>(yankround-p)
+"nmap gp <plug>(yankround-gp)
+"xmap gp <plug>(yankround-gp)
+"nmap gp <plug>(yankround-gp)
+"nmap <c-p> <plug>(yankround-prev)
+"nmap <c-n> <plug>(yankround-next)
+
+"ターミナルモード起動
+nnoremap <C-S-c> :vert term<CR>
+"nnoremap <C-S-c> :bo term<CR>
+
+"ファイラ
+nnoremap <silent><c-e> :NERDTreeTabsToggle<cr>
+
+nmap <C-n> :browse tabnew<CR>
+
+" ノーマルモードでターミナルウィンドウの高さを調整
+nnoremap <silent> + :resize +1<CR>
+nnoremap <silent> - :resize -1<CR>
+
+
+"$で行末(改行文字前)
+nnoremap $ g_
+vnoremap $ g_
+
+
+"1で行頭(改行文字前)
+nnoremap 1 0
+vnoremap 1 0
+
+
+"0で行末(改行文字前)
+nnoremap 0 g_
+vnoremap 0 g_
+
+
+"-で行末(改行文字前)
+nnoremap - g_
+vnoremap - g_
+
+
+
+nnoremap m 0v1d
+vnoremap m 0v1d
+
+"nomal modeでCtrl+Enterで改行を挿入
+nnoremap <C-CR> A<CR><Esc>
+" nomal modeでCtrl+Shift+Enterで直後の改行を削除
+nnoremap <C-S-CR> <S-j>
+
+tnoremap <ESC> <c-\><c-n>
+
+"vim easy motionの設定
+let g:EasyMotion_smartcase = 1
+let g:EasyMotion_do_mapping = 0 " Disable default mappings
+
+
+"vim easy motionのマッピング
+map <Leader>j <Plug>(easymotion-j)
+map <Leader>k <Plug>(easymotion-k)
+map s <Plug>(easymotion-overwin-f)
+map <Leader>w <Plug>(easymotion-overwin-w)
+
+" Ctrl+lでカーソルがある位置を画面の上に
+map <C-l> zt
+
+" visual modeでタブ挿入
+vnoremap <S-Tab> <gv
+vnoremap <Tab> >gv
+vnoremap < <gv
+vnoremap > >gv
+
+" pで上書きして貼り付けたときにレジスタを更新しない
+"nmap p "_dp
+"nmap P "_dP
+
+
+" pで上書きして貼り付けたときにレジスタを更新しない
+vnoremap p "_c<c-r>*<esc>
+vnoremap p "_c<c-r>*<esc>
+"vnoremap p "_c<esc>p
+"vnoremap p "_c<esc>p
+"aaa xxx
+"bbb xxx
+"ccc xxx
+"ddd 
+"eee 
+
+
+"ddd
+"eee
+"fff
+" Ctrl+vで貼り付け
+imap <C-v> <C-r>*
+cmap <C-v> <C-r>* 
+
+" Ctrl+zでUndo
+imap <C-z> <Esc>ua
+cmap <C-z> <Esc>ua
+
+" Ctrl+zでUndo
+imap <C-S-z> <Esc><C-r>a
+cmap <C-S-z> <Esc><C-r>a
+
+"無効化キーマップ一覧
+nnoremap <C-j> <Nop>
+vnoremap <C-j> <Nop>
+
+nnoremap <S-j> <Nop>
+vnoremap <S-j> <Nop>
+
+"----------------------------------------------------------
+" 文字コード
+"----------------------------------------------------------
+set encoding=utf-8
+set encoding=utf-8
+set fileencoding=utf-8
+set fileencodings=utf-8,euc-jp
+set termencoding=utf-8
+
+"set guifont=Cica:h12:cSHIFTJIS:qDRAFT
+set guifont=Hackgen:h12:cANSI:qDRAFT
+"set guifont=Noto:h12:cANSI:qDRAFT
+"----------------------------------------------------------
+
+"----------------------------------------------------------
+" 基本設定
+"----------------------------------------------------------
+"カラースキーム
+"colorscheme tender
+"colorscheme molokai
+colorscheme atom-dark
+"ステータスライン
+set laststatus=2
+let g:lightline = {
+	      \ 'colorscheme': 'solarized'
+      \ }
+" エラーメッセージの表示時にビープを鳴らさない
+set noerrorbells
+" windowsでパスの区切り文字をスラッシュで扱う
+set shellslash
+" 対応する括弧やブレースを表示
+set showmatch matchtime=1
+" インデント方法の変更
+set cinoptions+=:0
+" メッセージ表示欄を2行確保
+set cmdheight=2
+" ウィンドウの右下にまだ実行していない入力中のコマンドを表示
+set showcmd
+" 省略されずに表示
+set display=lastline
+" タブ文字を ctrl-i で表示し、行末に $ で表示する
+set list
+" 行末のスペースを可視化
+set listchars=tab:>-,trail:-,space:-
+" コマンドラインの履歴を10000件保存する
+set history=10000
+"タブをスペースとして入力
+"set expandtab
+" インデント幅
+set shiftwidth=8
+" タブキー押下時に挿入される文字幅を指定
+set softtabstop=8
+" ファイル内にあるタブ文字の表示幅
+set tabstop=8
+" ツールバーを非表示にする
+set guioptions-=T
+" メニューバーを非表示にする
+"set guioptions-=m
+" 右スクロールバーを非表示
+"set guioptions+=r
+" 対応する括弧を強調表示
+set showmatch
+" 改行時に入力された行の末尾に合わせて次の行のインデントを増減する
+set smartindent
+" スワップファイルを作成しない
+set noswapfile
+" 検索にマッチした行以外を折りたたむ(フォールドする)機能
+set nofoldenable
+" タイトルを表示
+set title
+" 行番号の表示
+set number
+" ヤンクでクリップボードにコピー
+set clipboard=unnamed
+" escの2回押しでハイライト消去
+nnoremap <esc><esc> :nohlsearch<cr><esc>
+" シンタックスハイライト
+syntax on
+" すべての数を10進数として扱う
+set nrformats=
+" 行をまたいで移動
+set whichwrap=b,s,h,l,<,>,[,],~
+" バッファスクロール
+set mouse=a
+
+set noswapfile
+" バックアップファイル出力無効
+set nobackup
+" undoファイル出力無効
+set noundofile
+
+set ma
+
+"Leaderキーをspaceに設定
+let mapleader = "\<Space>"
+
+" 起動時に最大化
+au GUIEnter * simalt ~x
+
+"自動補完
+set completeopt=menuone,noinsert
+" tabで次の補完項目を選択
+inoremap <expr> <tab> pumvisible() ? "\<c-n>" : "\<tab>"
+
+" shift+tabで前の補完項目を選択
+inoremap <expr> <s-tab> pumvisible() ? "\<c-p>" : "\<s-tab>"
+
+inoremap <expr><cr>  pumvisible() ? "<c-y>" : "<cr>"
+"----------------------------------------------------------
+
+" markdownの文字化けを直す
+autocmd! FileType markdown hi! def link markdownItalic Normal
+
+"----------------------------------------------------------
+" Define mappings
+"----------------------------------------------------------
+nnoremap <silent> <C-o> :<C-u>Denite file buffer file:new<CR>
+autocmd FileType denite call s:denite_my_settings()
+function! s:denite_my_settings() abort
+        nnoremap <silent><buffer><expr> <Esc>
+                \ denite#do_map('quit')
+        nnoremap <silent><buffer><expr> <Space>
+                \ denite#do_map('toggle_select').'j'
+        nnoremap <silent><buffer><expr> <CR>
+                \ denite#do_map('do_action')
+        nnoremap <silent><buffer><expr> o
+                \ denite#do_map('do_action')
+        nnoremap <silent><buffer><expr> s
+                \ denite#do_map('do_action', 'split')
+        nnoremap <silent><buffer><expr> v
+                \ denite#do_map('do_action', 'vsplit')
+        nnoremap <silent><buffer><expr> i
+                \ denite#do_map('open_filter_buffer')
+        nnoremap <silent><buffer><expr> ..
+                \ denite#do_map('move_up_path')
+endfunction
+"----------------------------------------------------------
+
+"----------------------------------------------------------
+"NERDTree ファイルによって色を変える
+"----------------------------------------------------------
+function! NERDTreeHighlightFile(extension, fg, bg, guifg, guibg)
+  exec 'autocmd filetype nerdtree highlight ' . a:extension .' ctermbg='. a:bg .' ctermfg='. a:fg .' guibg='. a:guibg .' guifg='. a:guifg
+  exec 'autocmd filetype nerdtree syn match ' . a:extension .' #^\s\+.*'. a:extension .'$#'
+endfunction
+call NERDTreeHighlightFile('jade', 'green', 'none', 'green', '#151515')
+call NERDTreeHighlightFile('ini', 'yellow', 'none', 'yellow', '#151515')
+call NERDTreeHighlightFile('md', 'blue', 'none', '#3366FF', '#151515')
+call NERDTreeHighlightFile('yml', 'yellow', 'none', 'yellow', '#151515')
+call NERDTreeHighlightFile('config', 'yellow', 'none', 'yellow', '#151515')
+call NERDTreeHighlightFile('conf', 'yellow', 'none', 'yellow', '#151515')
+call NERDTreeHighlightFile('json', 'yellow', 'none', 'yellow', '#151515')
+call NERDTreeHighlightFile('html', 'yellow', 'none', 'yellow', '#151515')
+call NERDTreeHighlightFile('styl', 'cyan', 'none', 'cyan', '#151515')
+call NERDTreeHighlightFile('css', 'cyan', 'none', 'cyan', '#151515')
+call NERDTreeHighlightFile('coffee', 'Red', 'none', 'red', '#151515')
+call NERDTreeHighlightFile('js', 'Red', 'none', '#ffa500', '#151515')
+call NERDTreeHighlightFile('php', 'Magenta', 'none', '#ff00ff', '#151515')
+"----------------------------------------------------------
+
+"----------------------------------------------------------
+" カスタムカラー
+"----------------------------------------------------------
+" visual modeでの選択範囲の色(元の色が薄くて見にくかったので変更した)
+hi Visual ctermbg=236 guibg=#494e8a
+"----------------------------------------------------------
+
+"----------------------------------------------------------
+" vim easymotion読み込み
+"----------------------------------------------------------
+augroup easymotion_plugin
+	autocmd!
+	autocmd VimEnter * map <Leader>j <Plug>(easymotion-j)
+	autocmd VimEnter * map <Leader>k <Plug>(easymotion-k)
+	autocmd VimEnter * map s <Plug>(easymotion-overwin-f)
+	autocmd VimEnter * map <Leader>w <Plug>(easymotion-overwin-w)
+augroup END
+"----------------------------------------------------------
+
+"----------------------------------------------------------
+" tabchangeコマンドでファイル内のタブをスペースに変換
+"----------------------------------------------------------
+function! ToggleExpandTab()
+	" expandtabが設定されているかチェック
+	if &expandtab
+		" expandtabが設定されていれば無効にする
+		set noexpandtab
+		" ここで必要ならばretabを実行
+		" retab! 4 など、必要に応じて設定
+	else
+		" expandtabが設定されていなければ有効にする
+		set expandtab
+		" expandtabを有効にした後でretabを実行
+		retab 8
+	endif
+endfunction
+" カスタムコマンドを定義し、上記の関数を実行
+command Tabchange call ToggleExpandTab()
+"----------------------------------------------------------
+
+"----------------------------------------------------------
+" 表の整形
+"----------------------------------------------------------
+function! AlignTableCommand(...) range
+    " デフォルトの区切り文字を空白に設定
+    let delimiter = '\s\+'
+    if len(a:000) > 0
+        " 引数で区切り文字が指定されている場合、使用する
+        let delimiter = a:000[0]
+    endif
+
+    if len(a:000) > 1
+        " 引数で区切り文字が指定されている場合、使用する
+        let aftreplacement = a:000[1]
+    else
+        let aftreplacement = delimiter
+    endif
+
+    "echom"使用する区切り文字: " . delimiter
+    "echom"置換後区切り文字:   " . aftreplacement
+
+    " ビジュアル選択範囲の取得
+    let [lnum_start, col_start] = getpos("'<")[1:2]
+    let [lnum_end, col_end] = getpos("'>")[1:2]
+
+    " ビジュアルモードでない場合は、バッファ全体を対象にする
+    if lnum_start == 1 && lnum_end == 1
+        "echom"ノーマルモード" . lnum_start . lnum_end
+        let lnum_start = 1
+        let lnum_end = line('$')
+    endif
+    "echom"処理対象範囲: " . lnum_start . " - " . lnum_end
+
+    " 選択範囲またはバッファ全体の行を取得
+    let lines = getline(lnum_start, lnum_end)
+    if lnum_start == lnum_end
+        let lines = [lines[0][col_start - 1 : col_end - 1]]
+    else
+        let lines[0] = lines[0][col_start - 1:]
+        let lines[-1] = lines[-1][:col_end - 1]
+    endif
+    "echom"選択範囲の内容: " . join(lines, "\n")
+
+    " 各行を分割し、列の最大幅を計算
+    let columns = []
+    let split_lines = []
+    for line in lines
+        " 区切り文字で分割しつつ、保持するために配列に格納
+        let fields = split(line, '\zs' . delimiter . '\ze')
+        let split_lines += [fields]
+        "echom"行内容: " . line
+        "echom"分割結果: " . string(fields)
+        for i in range(len(fields))
+            let width = strwidth(fields[i])
+            if len(columns) <= i
+                call add(columns, width)
+                "echom"列" . i . "の初期幅: " . width
+            else
+                let columns[i] = max([columns[i], width])
+                "echom"列" . i . "の更新幅: " . columns[i]
+            endif
+        endfor
+    endfor
+    "echom"列ごとの最大幅: " . string(columns)
+
+    " 各行を整列し、区切り文字を再構築
+    let result = []
+    for fields in split_lines
+        let new_line = ''
+        for i in range(len(fields))
+            let padding = columns[i] - strwidth(fields[i]) + 1
+            if i == len(fields) - 1
+                " 最後の列にはパディングを追加しない
+                let new_line .= fields[i]
+            else
+                if aftreplacement == '\s\+'
+                    let new_line .= fields[i] . repeat(' ', padding) . substitute(' ', '\s\+', ' ', 'g')
+                else
+                    let new_line .= fields[i] . repeat(' ', padding) . substitute(aftreplacement, '\s\+', ' ', 'g')
+                endif
+            endif
+        endfor
+        call add(result, new_line)
+        "echom"整列後の行: " . new_line
+    endfor
+
+    " 結果をバッファに反映
+    call setline(lnum_start, result)
+    "echom"整列処理が完了しました"
+endfunction
+
+" カスタムコマンドを定義
+command! -range -nargs=* AlignTable call AlignTableCommand(<f-args>)
+
+
