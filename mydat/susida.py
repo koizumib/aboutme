@@ -9,9 +9,12 @@
 損益が表示されます。
 
 ローマ字入力について:
-    「し」は shi/si のどちらでも、「つ」は tsu/tu、「ん」は n/nn など、
-    よくある表記ゆれを内部で吸収して受け付けます(促音・撥音・長音・
-    拗音にも対応)。画面には標準的な1つの読み方をガイドとして表示します。
+    各モーラ(かな1文字、拗音は2文字)を、そのかなに対応するローマ字に
+    置き換えていくだけのシンプルなルールです。「し」は shi/si、「つ」は
+    tsu/tu、「ん」は n/nn など、よくある表記ゆれはなるべく受け付けます。
+    促音(っ)は次の子音を重ねる方式ではなく、単独のモーラとして
+    xtu/ltu(またはxtsu/ltsu)を入力します。長音(ー)は半角ハイフン
+    「-」でそのまま入力します。
 
 操作方法:
     メニュー画面 : 1 / 2 / 3  コース選択、  q  終了
@@ -73,7 +76,14 @@ KANA_TABLE = {
     "びゃ": ["bya"], "びゅ": ["byu"], "びょ": ["byo"],
     "ぴゃ": ["pya"], "ぴゅ": ["pyu"], "ぴょ": ["pyo"],
     # 単独小文字(まれな外来語用)
-    "ぁ": ["a"], "ぃ": ["i"], "ぅ": ["u"], "ぇ": ["e"], "ぉ": ["o"],
+    "ぁ": ["xa", "la", "a"], "ぃ": ["xi", "li", "i"], "ぅ": ["xu", "lu", "u"],
+    "ぇ": ["xe", "le", "e"], "ぉ": ["xo", "lo", "o"],
+    # 撥音・促音・長音 (それぞれ独立したモーラとして、前後の文脈に関係なく
+    # 固定のローマ字を割り当てる。前の音を重ねたり伸ばしたりする特殊処理は
+    # あえて行わない、単純な「1モーラ=決まったローマ字」ルール)
+    "ん": ["n", "nn"],
+    "っ": ["xtu", "ltu", "xtsu", "ltsu"],
+    "ー": ["-"],
 }
 
 HIRAGANA_START, HIRAGANA_END = 0x3041, 0x3096
@@ -96,17 +106,14 @@ def normalize_reading(s):
 
 def tokenize_mora(s):
     """ひらがな文字列をモーラ単位のトークン列に分割する。
-    拗音(きゃ等)は2文字1トークンとしてまとめる。
+    拗音(きゃ等)は2文字1トークンとしてまとめる。それ以外(ん・っ・ー含む)は
+    すべて1文字1トークンとして扱い、KANA_TABLEを引くだけのシンプルな規則。
     """
     tokens = []
     i = 0
     n = len(s)
     while i < n:
         c = s[i]
-        if c in ("ー", "っ", "ん"):
-            tokens.append(c)
-            i += 1
-            continue
         if i + 1 < n and s[i + 1] in ("ゃ", "ゅ", "ょ") and (c + s[i + 1]) in KANA_TABLE:
             tokens.append(c + s[i + 1])
             i += 2
@@ -118,46 +125,17 @@ def tokenize_mora(s):
 
 def reading_to_chunks(reading):
     """正規化済みひらがな文字列 -> [ [alt1, alt2, ...], ... ] のチャンク列に変換。
-    促音(っ)・撥音(ん)・長音(ー)のルールをここで処理する。
+    各モーラを独立にKANA_TABLEで引くだけで、前後の文字に応じた特殊な
+    音便処理(促音の子音重複や長音の母音延長など)は一切行わない。
     """
     tokens = tokenize_mora(reading)
     chunks = []
-    pending_sokuon = False
-    last_vowel = None
-
     for tok in tokens:
-        if tok == "っ":
-            pending_sokuon = True
-            continue
-
-        if tok == "ー":
-            if last_vowel:
-                chunks.append([last_vowel])
-            continue
-
-        if tok == "ん":
-            chunks.append(["n", "nn"])
-            last_vowel = None
-            continue
-
         alts = KANA_TABLE.get(tok)
         if alts is None:
             # テーブルにない文字はそのまま1文字ローマ字として扱う(フォールバック)
             alts = [tok]
-
-        if pending_sokuon:
-            new_alts = []
-            for a in alts:
-                if a and a[0] not in "aiueo":
-                    new_alts.append(a[0] + a)
-                else:
-                    new_alts.append(a)
-            alts = new_alts
-            pending_sokuon = False
-
         chunks.append(alts)
-        last_vowel = alts[0][-1] if alts and alts[0] else last_vowel
-
     return chunks
 
 
@@ -324,7 +302,7 @@ class Game:
         if self.finished or self.paused or self.current is None:
             return
         ch = ch.lower()
-        if len(ch) != 1 or not ch.isalpha():
+        if len(ch) != 1 or not (ch.isalpha() or ch == "-"):
             return
         self.keystrokes += 1
         candidate = self.typed_buffer + ch
@@ -512,7 +490,7 @@ class Terminal:
             c = ch.decode("utf-8", errors="ignore")
         except UnicodeDecodeError:
             return None
-        if c and c.isalnum():
+        if c and (c.isalnum() or c == "-"):
             return c.lower()
         return None
 
@@ -536,7 +514,7 @@ class Terminal:
             return "BACKSPACE"
         if ch == "\x03":
             raise KeyboardInterrupt
-        if ch.isalnum():
+        if ch.isalnum() or ch == "-":
             return ch.lower()
         return None
 
@@ -700,7 +678,7 @@ def main():
                     game.toggle_pause()
                 elif key == "BACKSPACE":
                     game.handle_backspace()
-                elif len(key) == 1 and key.isalpha():
+                elif len(key) == 1 and (key.isalpha() or key == "-"):
                     game.handle_char(key)
 
             elif state == "result":
