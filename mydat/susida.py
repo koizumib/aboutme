@@ -24,6 +24,11 @@
                    q          終了
     結果画面     : Enter      メニューに戻る、  q  終了
 
+お皿の値段について:
+    お題(ひらがな)の文字数(モーラ数)に応じて、お皿の値段が
+    梅(¥100)/竹(¥150)/松(¥220)/特上(¥300)の4段階に分かれます。
+    お題の表示色もこの段階ごとに変わります。
+
 単語データ:
     sushi_words.txt (このスクリプトと同じディレクトリ) から読み込みます。
     フォーマットは「表示文字列<TAB>読み」を1行ずつ。読みはひらがな/
@@ -188,11 +193,33 @@ def compute_canonical(chunks):
 
 
 # ============================================================
-# 単語データ
+# 単語データ / 値段の段階分け(お皿の値段)
 # ============================================================
 
+# ひらがなの文字数(モーラ数)に応じて、お皿の値段を何段階かに分ける。
+# (max_mora, 価格, 皿の名前, 表示色キー) の順に判定し、最初に
+# mora_count <= max_mora を満たした段階が採用される。
+PLATE_TIERS = [
+    (3, 100, "梅", "default"),
+    (5, 150, "竹", "green"),
+    (7, 220, "松", "cyan"),
+    (10 ** 9, 300, "特上", "magenta"),
+]
+
+
+def plate_for_mora_count(mora_count):
+    for max_mora, price, name, color in PLATE_TIERS:
+        if mora_count <= max_mora:
+            return price, name, color
+    last = PLATE_TIERS[-1]
+    return last[1], last[2], last[3]
+
+
 class WordEntry:
-    __slots__ = ("display", "reading", "canonical", "completions")
+    __slots__ = (
+        "display", "reading", "canonical", "completions",
+        "mora_count", "plate_price", "plate_name", "plate_color",
+    )
 
     def __init__(self, display, reading):
         self.display = display
@@ -201,6 +228,12 @@ class WordEntry:
         chunks = reading_to_chunks(norm)
         self.canonical = compute_canonical(chunks)
         self.completions = compute_completions(chunks)
+
+        self.mora_count = len(tokenize_mora(norm))
+        price, name, color = plate_for_mora_count(self.mora_count)
+        self.plate_price = price
+        self.plate_name = name
+        self.plate_color = color
 
 
 DEFAULT_WORDS = [
@@ -250,9 +283,6 @@ WORD_ENTRIES = _load_default_entries()
 # ============================================================
 # ゲームロジック
 # ============================================================
-
-YEN_PER_CHAR = 3
-WORD_BONUS = 5
 
 COURSES = [
     (60, 3000, "お手軽3000円コース"),
@@ -356,7 +386,8 @@ class Game:
             self.typed_buffer = self.typed_buffer[:-1]
 
     def _complete_word(self):
-        earned = len(self.typed_buffer) * YEN_PER_CHAR + WORD_BONUS
+        # お皿の値段(ひらがなの文字数=モーラ数に応じた段階制)をそのまま加算する
+        earned = self.current.plate_price
         self.score += earned
         self.completed += 1
         self.typed_buffer = ""
@@ -438,8 +469,26 @@ def c_red(s):
     return f"\x1b[1;31m{s}{RESET}"
 
 
+def c_magenta(s):
+    return f"\x1b[1;35m{s}{RESET}"
+
+
 def c_reverse(s):
     return f"\x1b[7m{s}{RESET}"
+
+
+# お皿の値段の段階(PLATE_TIERS)の色キー -> 実際の色関数
+PLATE_COLOR_FUNCS = {
+    "default": c_bold,
+    "green": c_green,
+    "cyan": c_cyan,
+    "magenta": c_magenta,
+}
+
+
+def colorize_plate(s, color_key):
+    fn = PLATE_COLOR_FUNCS.get(color_key, c_bold)
+    return fn(s)
 
 
 def box_line(text_line=""):
@@ -580,6 +629,27 @@ def render_menu():
     sys.stdout.flush()
 
 
+def guide_romaji(word, typed):
+    """typed(現在の入力途中文字列)に対して、今実際にマッチしている
+    有効なローマ字候補を1つ選んで返す。
+
+    以前は常にcanonical(標準表記)基準で残り文字列を計算していたため、
+    ユーザーが表記ゆれ(例: shiではなくsi)を選んだ時点でtypedが
+    canonicalの prefix でなくなり、残り文字列がリセットされて
+    表示が重複・崩壊するバグがあった。ここでは「実際にtypedを
+    prefixに持つ候補」の中から選ぶことで、常に整合性のある
+    残り文字列を返す。
+    """
+    matches = [c for c in word.completions if c.startswith(typed)]
+    if not matches:
+        # 通常は起こらないはず(handle_charが不正な入力を弾くため)だが、
+        # 万一の不整合に備えてcanonicalにフォールバックする
+        return word.canonical
+    if word.canonical in matches:
+        return word.canonical
+    return min(matches, key=len)
+
+
 def render_playing(game):
     out = [HOME]
     out.append(move_to(1, 1) + c_bold("=== 寿司打風 タイピングゲーム ===") + "   " + c_gray(game.course_name))
@@ -589,13 +659,19 @@ def render_playing(game):
     word = game.current
     out.append(move_to(row, 1) + box_line("おだい:"))
     row += 1
-    out.append(move_to(row, 1) + box_line("  " + word.display))
+
+    plate_label = f"[{word.plate_name}皿 ¥{word.plate_price}]"
+    plain_disp = "  " + word.display + "  " + plate_label
+    colored_disp = "  " + colorize_plate(word.display, word.plate_color) + "  " + c_gray(plate_label)
+    pad = max(0, BOX_WIDTH - display_width(plain_disp))
+    out.append(move_to(row, 1) + "| " + colored_disp + (" " * pad) + " |")
     row += 1
     out.append(move_to(row, 1) + box_line())
     row += 1
 
     typed = game.typed_buffer
-    rest = word.canonical[len(typed):] if word.canonical.startswith(typed) else word.canonical
+    guide = guide_romaji(word, typed)
+    rest = guide[len(typed):] if guide.startswith(typed) else guide
     typed_disp = c_green(typed)
     rest_disp = c_yellow(rest)
     out.append(move_to(row, 1) + box_line("  よみ:"))
