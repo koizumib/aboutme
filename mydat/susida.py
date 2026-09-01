@@ -12,9 +12,9 @@
     各モーラ(かな1文字、拗音は2文字)を、そのかなに対応するローマ字に
     置き換えていくだけのシンプルなルールです。「し」は shi/si、「つ」は
     tsu/tu、「ん」は n/nn など、よくある表記ゆれはなるべく受け付けます。
-    促音(っ)は次の子音を重ねる方式ではなく、単独のモーラとして
-    xtu/ltu(またはxtsu/ltsu)を入力します。長音(ー)は半角ハイフン
-    「-」でそのまま入力します。
+    促音(っ)は、xtu/ltu(またはxtsu/ltsu)を単独のモーラとして入力する
+    方法と、次の子音を重ねて入力する従来方法(例: がっこう→gakkou)の
+    どちらも受け付けます。長音(ー)は半角ハイフン「-」で入力します。
 
 操作方法:
     メニュー画面 : 1 / 2 / 3  コース選択、  q  終了
@@ -125,17 +125,52 @@ def tokenize_mora(s):
 
 def reading_to_chunks(reading):
     """正規化済みひらがな文字列 -> [ [alt1, alt2, ...], ... ] のチャンク列に変換。
-    各モーラを独立にKANA_TABLEで引くだけで、前後の文字に応じた特殊な
-    音便処理(促音の子音重複や長音の母音延長など)は一切行わない。
+
+    基本は各モーラを独立にKANA_TABLEで引くだけのシンプルな規則。
+    ただし促音(っ)だけは例外的に、次のモーラと合わせて1チャンクとして
+    まとめ、次の2通りの入力方法を両方受け付ける:
+      1) 独立したモーラとして xtu/ltu/xtsu/ltsu を打つ方法
+      2) 次の子音を重ねて打つ従来方法 (例: がっこう -> gakkou)
     """
     tokens = tokenize_mora(reading)
     chunks = []
-    for tok in tokens:
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+
+        if tok == "っ" and i + 1 < n:
+            next_tok = tokens[i + 1]
+            next_alts = KANA_TABLE.get(next_tok, [next_tok])
+
+            combined = []
+            seen = set()
+
+            def add(s):
+                if s not in seen:
+                    seen.add(s)
+                    combined.append(s)
+
+            # 1) 独立したモーラとして入力する方法 (xtu/ltu/xtsu/ltsu + 次のモーラ)
+            for a in KANA_TABLE["っ"]:
+                for b in next_alts:
+                    add(a + b)
+            # 2) 次の子音を重ねて入力する従来方法 (例: k + ko -> kko)
+            for b in next_alts:
+                if b and b[0] not in "aiueo":
+                    add(b[0] + b)
+
+            chunks.append(combined)
+            i += 2
+            continue
+
         alts = KANA_TABLE.get(tok)
         if alts is None:
             # テーブルにない文字はそのまま1文字ローマ字として扱う(フォールバック)
             alts = [tok]
         chunks.append(alts)
+        i += 1
+
     return chunks
 
 
