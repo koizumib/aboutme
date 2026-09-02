@@ -128,17 +128,20 @@ def tokenize_mora(s):
     return tokens
 
 
-def reading_to_chunks(reading):
-    """正規化済みひらがな文字列 -> [ [alt1, alt2, ...], ... ] のチャンク列に変換。
+def reading_to_paths(reading, limit=128):
+    """正規化済みひらがな文字列から、有効な「モーラ単位の入力経路」の
+    一覧を作る。各パスは元のひらがなトークン列と1対1対応する
+    [(token, romaji_piece), ...] のリストで、モーラごとの文字境界を
+    保持したまま複数の表記ゆれを扱えるようにするための構造。
 
-    基本は各モーラを独立にKANA_TABLEで引くだけのシンプルな規則。
-    ただし促音(っ)だけは例外的に、次のモーラと合わせて1チャンクとして
-    まとめ、次の2通りの入力方法を両方受け付ける:
+    促音(っ)だけは例外的に、次のモーラと組み合わせて次の2通りの
+    入力方法を両方受け付ける(トークン自体は分割したまま):
       1) 独立したモーラとして xtu/ltu/xtsu/ltsu を打つ方法
       2) 次の子音を重ねて打つ従来方法 (例: がっこう -> gakkou)
     """
     tokens = tokenize_mora(reading)
-    chunks = []
+    # 各スロットは「そのスロットで選べる (token, romaji)の並び」のリスト
+    slot_options = []
     i = 0
     n = len(tokens)
     while i < n:
@@ -148,48 +151,96 @@ def reading_to_chunks(reading):
             next_tok = tokens[i + 1]
             next_alts = KANA_TABLE.get(next_tok, [next_tok])
 
-            combined = []
+            options = []
             seen = set()
 
-            def add(s):
-                if s not in seen:
-                    seen.add(s)
-                    combined.append(s)
+            def add(seg):
+                key = tuple(p for _, p in seg)
+                if key not in seen:
+                    seen.add(key)
+                    options.append(seg)
 
-            # 1) 独立したモーラとして入力する方法 (xtu/ltu/xtsu/ltsu + 次のモーラ)
+            # 1) 独立したモーラとして入力する方法
             for a in KANA_TABLE["っ"]:
                 for b in next_alts:
-                    add(a + b)
+                    add([(tok, a), (next_tok, b)])
             # 2) 次の子音を重ねて入力する従来方法 (例: k + ko -> kko)
             for b in next_alts:
                 if b and b[0] not in "aiueo":
-                    add(b[0] + b)
+                    add([(tok, b[0]), (next_tok, b)])
 
-            chunks.append(combined)
+            slot_options.append(options)
             i += 2
             continue
 
         alts = KANA_TABLE.get(tok)
         if alts is None:
-            # テーブルにない文字はそのまま1文字ローマ字として扱う(フォールバック)
             alts = [tok]
-        chunks.append(alts)
+        slot_options.append([[(tok, a)] for a in alts])
         i += 1
 
-    return chunks
+    paths = []
+    for combo in itertools.islice(itertools.product(*slot_options), limit):
+        flat = []
+        for segment in combo:
+            flat.extend(segment)
+        paths.append(flat)
+    return paths, tokens
 
 
-def compute_completions(chunks, limit=128):
-    """チャンク列から、有効な全ローマ字表記の集合を計算する"""
-    if not chunks:
-        return {""}
-    combos = itertools.islice(itertools.product(*chunks), limit)
-    return {"".join(parts) for parts in combos}
+def path_to_string(path):
+    return "".join(piece for _, piece in path)
 
 
-def compute_canonical(chunks):
-    """標準的な(先頭表記の)ローマ字文字列を組み立てる"""
-    return "".join(alts[0] for alts in chunks if alts)
+def canonical_path_of(reading):
+    """各モーラの先頭(標準的な)表記だけを使ったパスを組み立てる"""
+    tokens = tokenize_mora(reading)
+    path = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if tok == "っ" and i + 1 < n:
+            next_tok = tokens[i + 1]
+            next_alts = KANA_TABLE.get(next_tok, [next_tok])
+            path.append((tok, KANA_TABLE["っ"][0]))
+            path.append((next_tok, next_alts[0]))
+            i += 2
+            continue
+        alts = KANA_TABLE.get(tok, [tok])
+        path.append((tok, alts[0]))
+        i += 1
+    return path
+
+
+def token_spans(tokens):
+    """トークン列から、各トークンの文字数に基づく(開始,終了)インデックスを返す。
+    displayとreadingが同じ長さ(=1文字ずつ対応)の場合に、displayの
+    どの範囲がどのモーラに対応するかを求めるために使う。
+    """
+    spans = []
+    pos = 0
+    for tok in tokens:
+        spans.append((pos, pos + len(tok)))
+        pos += len(tok)
+    return spans
+
+
+def guide_path(word, typed):
+    """typed(現在の入力途中文字列)に整合する(prefixとして持つ)パスを
+    1つ選んで返す。canonicalがまだ整合していればそれを優先する。
+    """
+    if word.canonical.startswith(typed):
+        return word.canonical_path
+    matches = [p for p in word.paths if path_to_string(p).startswith(typed)]
+    if not matches:
+        return word.canonical_path
+    return min(matches, key=lambda p: len(path_to_string(p)))
+
+
+def guide_romaji(word, typed):
+    """guide_pathの文字列版(表示用)"""
+    return path_to_string(guide_path(word, typed))
 
 
 # ============================================================
@@ -217,7 +268,8 @@ def plate_for_mora_count(mora_count):
 
 class WordEntry:
     __slots__ = (
-        "display", "reading", "canonical", "completions",
+        "display", "reading", "canonical", "canonical_path",
+        "completions", "paths", "tokens", "display_spans",
         "mora_count", "plate_price", "plate_name", "plate_color",
     )
 
@@ -225,11 +277,18 @@ class WordEntry:
         self.display = display
         self.reading = reading
         norm = normalize_reading(reading)
-        chunks = reading_to_chunks(norm)
-        self.canonical = compute_canonical(chunks)
-        self.completions = compute_completions(chunks)
 
-        self.mora_count = len(tokenize_mora(norm))
+        self.paths, self.tokens = reading_to_paths(norm)
+        self.canonical_path = canonical_path_of(norm)
+        self.canonical = path_to_string(self.canonical_path)
+        self.completions = {path_to_string(p) for p in self.paths}
+
+        # displayとreading(正規化前)が1文字ずつ対応している場合のみ、
+        # displayの部分文字列をモーラごとに色分けできる
+        spans = token_spans(self.tokens)
+        self.display_spans = spans if len(display) == len(norm) else None
+
+        self.mora_count = len(self.tokens)
         price, name, color = plate_for_mora_count(self.mora_count)
         self.plate_price = price
         self.plate_name = name
@@ -284,6 +343,9 @@ WORD_ENTRIES = _load_default_entries()
 # ゲームロジック
 # ============================================================
 
+# 誤入力があった時に、期待していた文字を赤く光らせておく時間(秒)
+ERROR_FLASH_DURATION = 0.25
+
 COURSES = [
     (60, 3000, "お手軽3000円コース"),
     (90, 5000, "しっかり5000円コース"),
@@ -312,6 +374,8 @@ class Game:
         self.finished = False
         self.paused = False
         self._pause_started = 0.0
+        self.error_char = None
+        self.error_until = 0.0
 
     def _refill_bag(self):
         self.bag = list(self.words)
@@ -341,6 +405,8 @@ class Game:
         self.current = self._pop_word()
         self.finished = False
         self.paused = False
+        self.error_char = None
+        self.error_until = 0.0
 
     def toggle_pause(self):
         if self.finished:
@@ -373,6 +439,13 @@ class Game:
         candidate = self.typed_buffer + ch
         if not any(c.startswith(candidate) for c in self.current.completions):
             self.mistakes += 1
+            # 期待していた次の文字を、一瞬赤く光らせるために記録しておく
+            guide = guide_romaji(self.current, self.typed_buffer)
+            if len(guide) > len(self.typed_buffer):
+                self.error_char = guide[len(self.typed_buffer)]
+            else:
+                self.error_char = None
+            self.error_until = time.time() + ERROR_FLASH_DURATION
             return
         self.typed_buffer = candidate
         self.total_chars_typed += 1
@@ -629,25 +702,28 @@ def render_menu():
     sys.stdout.flush()
 
 
-def guide_romaji(word, typed):
-    """typed(現在の入力途中文字列)に対して、今実際にマッチしている
-    有効なローマ字候補を1つ選んで返す。
-
-    以前は常にcanonical(標準表記)基準で残り文字列を計算していたため、
-    ユーザーが表記ゆれ(例: shiではなくsi)を選んだ時点でtypedが
-    canonicalの prefix でなくなり、残り文字列がリセットされて
-    表示が重複・崩壊するバグがあった。ここでは「実際にtypedを
-    prefixに持つ候補」の中から選ぶことで、常に整合性のある
-    残り文字列を返す。
+def compute_mora_segments(word, path, typed_len):
+    """word.displayを、pathの進捗(typed_lenまで打ち終えたか)に応じて
+    3色(done/current/future)に塗り分けるためのセグメントリストを返す。
+    戻り値: [(display_substring, color_key), ...] または
+    (displayとreadingの文字数が対応しない場合) None
     """
-    matches = [c for c in word.completions if c.startswith(typed)]
-    if not matches:
-        # 通常は起こらないはず(handle_charが不正な入力を弾くため)だが、
-        # 万一の不整合に備えてcanonicalにフォールバックする
-        return word.canonical
-    if word.canonical in matches:
-        return word.canonical
-    return min(matches, key=len)
+    if word.display_spans is None:
+        return None
+    segments = []
+    romaji_pos = 0
+    for (_tok, piece), (d_start, d_end) in zip(path, word.display_spans):
+        piece_len = len(piece)
+        r_start, r_end = romaji_pos, romaji_pos + piece_len
+        romaji_pos = r_end
+        if r_end <= typed_len:
+            color = "done"
+        elif r_start <= typed_len < r_end:
+            color = "current"
+        else:
+            color = "future"
+        segments.append((word.display[d_start:d_end], color))
+    return segments
 
 
 def render_playing(game):
@@ -657,23 +733,55 @@ def render_playing(game):
 
     row = 4
     word = game.current
+    typed = game.typed_buffer
+    path = guide_path(word, typed)
+    guide = path_to_string(path)
+
     out.append(move_to(row, 1) + box_line("おだい:"))
     row += 1
 
+    # ひらがな(おだい)を、ローマ字の進捗と同じ考え方で塗り分ける:
+    # 打ち終えたモーラ=緑、次に打つモーラ=黄色、まだ先のモーラ=お皿の色
+    segments = compute_mora_segments(word, path, len(typed))
+    if segments is not None:
+        plain_parts = []
+        colored_parts = []
+        for text_piece, color in segments:
+            plain_parts.append(text_piece)
+            if color == "done":
+                colored_parts.append(c_green(text_piece))
+            elif color == "current":
+                colored_parts.append(c_yellow(text_piece))
+            else:
+                colored_parts.append(colorize_plate(text_piece, word.plate_color))
+        plain_hira = "".join(plain_parts)
+        colored_hira = "".join(colored_parts)
+    else:
+        plain_hira = word.display
+        colored_hira = colorize_plate(word.display, word.plate_color)
+
     plate_label = f"[{word.plate_name}皿 ¥{word.plate_price}]"
-    plain_disp = "  " + word.display + "  " + plate_label
-    colored_disp = "  " + colorize_plate(word.display, word.plate_color) + "  " + c_gray(plate_label)
+    plain_disp = "  " + plain_hira + "  " + plate_label
+    colored_disp = "  " + colored_hira + "  " + c_gray(plate_label)
     pad = max(0, BOX_WIDTH - display_width(plain_disp))
     out.append(move_to(row, 1) + "| " + colored_disp + (" " * pad) + " |")
     row += 1
     out.append(move_to(row, 1) + box_line())
     row += 1
 
-    typed = game.typed_buffer
-    guide = guide_romaji(word, typed)
+    # ローマ字(よみ)側: 打ち終えた分=緑、残り=黄色。
+    # 直前に誤入力があった場合は、次に期待する1文字だけ一瞬赤く光らせる
     rest = guide[len(typed):] if guide.startswith(typed) else guide
+    is_flashing = (
+        game.error_char is not None
+        and time.time() < game.error_until
+        and rest[:1] == game.error_char
+    )
     typed_disp = c_green(typed)
-    rest_disp = c_yellow(rest)
+    if is_flashing and rest:
+        rest_disp = c_red(rest[0]) + c_yellow(rest[1:])
+    else:
+        rest_disp = c_yellow(rest)
     out.append(move_to(row, 1) + box_line("  よみ:"))
     row += 1
     # ANSIコード込みだと表示幅計算がずれるため、box_lineは使わずシンプルに出力
